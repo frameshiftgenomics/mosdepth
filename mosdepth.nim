@@ -7,7 +7,7 @@ import strutils as su
 import os
 import docopt
 import times
-
+import stats
 
 var precision: int
 try:
@@ -28,22 +28,6 @@ type
     name: string
 
   coverage_t = seq[int32]
-
-  read_level_stats = ref object
-    totalReads: int
-    mappedReads: int 
-    forwardStrands: int
-    reverseStrands: int
-    failedQC: int
-    duplicates: int
-    pairedEndReads: int
-    properPairs: int
-    bothMatesMapped: int
-    firstMates: int
-    secondMates: int
-    singletons: int
-    lastReadPos: int
-    
 
 proc `$`(r: region_t): string =
   if r == nil:
@@ -243,31 +227,7 @@ proc init(arr: var coverage_t, tlen:int) =
   #for m in arr.mitems:
   #  m = 0
 
-proc init(read_stats: var read_level_stats) = 
-
-  if read_stats == nil:
-    read_stats = new(read_level_stats)
-
-  read_stats.totalReads = 0
-
-  read_stats.mappedReads = 0
-  read_stats.bothMatesMapped = 0
-  read_stats.pairedEndReads = 0
-  read_stats.properPairs = 0
-
-  read_stats.firstMates = 0
-  read_stats.secondMates = 0
-  
-  read_stats.forwardStrands = 0
-  read_stats.reverseStrands = 0
-  
-  read_stats.duplicates = 0
-  read_stats.singletons = 0
-  
-  read_stats.lastReadPos = 0
-  read_stats.failedQC = 0
-
-proc coverage(bam: hts.Bam, arr: var coverage_t, read_stats: var read_level_stats, region: var region_t, mapq:int= -1, eflag: uint16=1796): int =
+proc coverage(bam: hts.Bam, arr: var coverage_t, read_stats: var readStats, region: var region_t, mapq:int= -1, eflag: uint16=1796): int =
   # depth updates arr in-place and yields the tid for each chrom.
   # returns -1 if the chrom is not found in the bam header
   # returns -2 if the chrom was found in the header, but there was no data for it
@@ -296,12 +256,26 @@ proc coverage(bam: hts.Bam, arr: var coverage_t, read_stats: var read_level_stat
     if tgt.tid != rec.b.core.tid:
         raise newException(OSError, "expected only a single chromosome per query")
 
-    read_stats.mappedReads += 1
+    if rec.flag.dup: read_stats.duplicates += 1
+    if rec.flag.qcfail: read_stats.failedQC += 1
+    if not rec.flag.unmapped: read_stats.mappedReads += 1
+
+    if hts.pair(rec.flag):
+      read_stats.pairedEndReads += 1
+      
+      if rec.flag.read1: read_stats.firstMates += 1
+      if rec.flag.read2: read_stats.secondMates += 1
+
+      if not rec.flag.unmapped: 
+        if rec.flag.mate_unmapped: read_stats.singletons += 1
+        else: read_stats.bothMatesMapped += 1
     
     # rec:   --------------
     # mate:             ------------
     # handle overlapping mate pairs.
     if rec.flag.proper_pair:
+      read_stats.properPairs += 1
+
       if rec.b.core.tid == rec.b.core.mtid and rec.stop > rec.matepos and rec.start < rec.matepos:
         var rc = rec.copy()
         seen[rc.qname] = rc
@@ -543,7 +517,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
     sub_targets = get_targets(targets, chrom)
     rchrom : region_t
     arr: coverage_t
-    read_stats: read_level_stats
+    read_stats: readStats
     prefix: string = $(args["<prefix>"])
     skip_per_base = args["--no-per-base"]
     window: uint32 = 0
@@ -555,6 +529,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
     fregion: BGZI
     fh_global_dist:File
     fh_region_dist:File
+    bam_stats:File
     quantize = get_quantize_args($args["--quantize"])
 
   var region_distribution = new_seq[int64](1000)
@@ -654,8 +629,9 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
         for p in gen_quantized(quantize, arr):
             discard fquantize.write_interval(starget & intToStr(p.start) & "\t" & intToStr(p.stop) & "\t" & p.value, target.name, p.start, p.stop)
 
-  echo "Total reads: ", read_stats.totalReads
-  echo "Mapped reads: ", read_stats.mappedReads
+  if open(bam_stats, prefix & ".mosdepth.bam_stats.json", fmWrite):
+    bam_stats.write_line(read_stats.to_json())
+    bam_stats.close()
 
   write_distribution("total", global_distribution, fh_global_dist)
   if region != nil:
