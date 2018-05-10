@@ -227,7 +227,7 @@ proc init(arr: var coverage_t, tlen:int) =
   #for m in arr.mitems:
   #  m = 0
 
-proc coverage(bam: hts.Bam, arr: var coverage_t, read_stats: var readStats, region: var region_t, mapq:int= -1, eflag: uint16=1796): int =
+proc coverage(bam: hts.Bam, arr: var coverage_t, bam_stats: var bamStats, region: var region_t, mapq:int= -1, eflag: uint16=1796): int =
   # depth updates arr in-place and yields the tid for each chrom.
   # returns -1 if the chrom is not found in the bam header
   # returns -2 if the chrom was found in the header, but there was no data for it
@@ -246,7 +246,7 @@ proc coverage(bam: hts.Bam, arr: var coverage_t, read_stats: var readStats, regi
 
   var found = false
   for rec in bam.regions(region, tid, targets):
-    read_stats.totalReads += 1
+    bam_stats.countRead(rec, region.chrom)
     if not found:
       arr.init(int(tgt.length+1))
       found = true
@@ -256,25 +256,10 @@ proc coverage(bam: hts.Bam, arr: var coverage_t, read_stats: var readStats, regi
     if tgt.tid != rec.b.core.tid:
         raise newException(OSError, "expected only a single chromosome per query")
 
-    if rec.flag.dup: read_stats.duplicates += 1
-    if rec.flag.qcfail: read_stats.failedQC += 1
-    if not rec.flag.unmapped: read_stats.mappedReads += 1
-
-    if hts.pair(rec.flag):
-      read_stats.pairedEndReads += 1
-      
-      if rec.flag.read1: read_stats.firstMates += 1
-      if rec.flag.read2: read_stats.secondMates += 1
-
-      if not rec.flag.unmapped: 
-        if rec.flag.mate_unmapped: read_stats.singletons += 1
-        else: read_stats.bothMatesMapped += 1
-    
     # rec:   --------------
     # mate:             ------------
     # handle overlapping mate pairs.
     if rec.flag.proper_pair:
-      read_stats.properPairs += 1
 
       if rec.b.core.tid == rec.b.core.mtid and rec.stop > rec.matepos and rec.start < rec.matepos:
         var rc = rec.copy()
@@ -517,7 +502,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
     sub_targets = get_targets(targets, chrom)
     rchrom : region_t
     arr: coverage_t
-    read_stats: readStats
+    bam_stats: bamStats
     prefix: string = $(args["<prefix>"])
     skip_per_base = args["--no-per-base"]
     window: uint32 = 0
@@ -529,7 +514,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
     fregion: BGZI
     fh_global_dist:File
     fh_region_dist:File
-    bam_stats:File
+    fh_bam_stats:File
     quantize = get_quantize_args($args["--quantize"])
 
   var region_distribution = new_seq[int64](1000)
@@ -564,11 +549,11 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
     else:
       bed_regions = bed_to_table(region)
 
-  read_stats.init()
+  bam_stats.init()
 
   for rec in bam.querys("*"):
     # Count the unaligned reads
-    read_stats.totalReads += 1
+    bam_stats.countRead(rec)
 
   for target in sub_targets:
     chrom_global_distribution = new_seq[int64](1000)
@@ -578,7 +563,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
     if skip_per_base and thresholds == nil and quantize == nil and bed_regions != nil and not bed_regions.contains(target.name):
       continue
     rchrom = region_t(chrom: target.name)
-    var tid = coverage(bam, arr, read_stats, rchrom, mapq, eflag)
+    var tid = coverage(bam, arr, bam_stats, rchrom, mapq, eflag)
     if tid == -1: continue # -1 means that chrom is not even in the bam
     if tid != -2: # -2 means there were no reads in the bam
       arr.to_coverage()
@@ -629,9 +614,9 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
         for p in gen_quantized(quantize, arr):
             discard fquantize.write_interval(starget & intToStr(p.start) & "\t" & intToStr(p.stop) & "\t" & p.value, target.name, p.start, p.stop)
 
-  if open(bam_stats, prefix & ".mosdepth.bam_stats.json", fmWrite):
-    bam_stats.write_line(read_stats.to_json())
-    bam_stats.close()
+  if open(fh_bam_stats, prefix & ".mosdepth.bam_stats.json", fmWrite):
+    fh_bam_stats.write_line(bam_stats.to_json())
+    fh_bam_stats.close()
 
   write_distribution("total", global_distribution, fh_global_dist)
   if region != nil:
