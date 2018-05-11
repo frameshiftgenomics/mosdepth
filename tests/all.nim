@@ -106,3 +106,11 @@ suite "bamstats-suite":
       "cram-basic-stats-s3", 
       "s3://" & s3_root_key & "yeast.cram", 
       "tests/data/expected_yeast_cramstats.json") 
+
+  test "bam-NA12878-stats":
+    test_basic_stats(
+      "", 
+      "bam-NA12878-stats", 
+      "tests/data/NA12878.exome.005.bam", 
+      "tests/data/expected_NA12878_bamstats.json")
+        
