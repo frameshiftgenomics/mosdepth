@@ -18,13 +18,10 @@ type
     singletons: int
     lastReadPos: int
 
-    refAlnHist: TableRef[string, int]
-    mapQualityHist: OrderedTableRef[int, int] 
-
-proc check_inc[TKey : string|int, TTable](t: var TTable, k: TKey) = 
-  if not t.hasKey(k):
-    t[k] = 0
-  t[k] += 1
+    refAlnHist: CountTableRef[string]
+    mapQualityHist: CountTableRef[int] 
+    fragLengthHist: CountTableRef[int]
+    readLengthHist: CountTableRef[int]
 
 proc countRead*(rs: var bamStats, rec: Record, chrom: string = nil) = 
   rs.totalReads += 1
@@ -49,16 +46,20 @@ proc countRead*(rs: var bamStats, rec: Record, chrom: string = nil) =
       else: rs.bothMatesMapped += 1
   
   if chrom != nil:
-    rs.refAlnHist.check_inc(chrom)
+    rs.refAlnHist.inc(chrom)
     #if not rs.refAlnHist.hasKey(chrom):
     #  rs.refAlnHist[chrom] = 0
     #rs.refAlnHist[chrom] += 1
   
-  rs.mapQualityHist.check_inc((int)rec.mapping_quality)
+  rs.mapQualityHist.inc((int)rec.mapping_quality)
+  rs.readLengthHist.inc(rec.b.core.l_qseq)
 
   # This field is dubious as it depends on the order of traversing the bam file
   rs.lastReadPos = rec.start
 
+  if hts.pair(rec.flag) and not rec.flag.unmapped and not rec.flag.mate_unmapped and rec.chrom == rec.mate_chrom and rec.mate_pos > rec.start:
+    rs.fragLengthHist.inc(rec.isize)
+   
 
 proc init*(rs: var bamStats) = 
 
@@ -84,8 +85,10 @@ proc init*(rs: var bamStats) =
   rs.lastReadPos = 0
   rs.failedQC = 0
 
-  rs.refAlnHist = newTable[string, int]()
-  rs.mapQualityHist = newOrderedTable[int, int]()
+  rs.refAlnHist = newCountTable[string]()
+  rs.mapQualityHist = newCountTable[int]()
+  rs.fragLengthHist = newCountTable[int]()
+  rs.readLengthHist = newCountTable[int]()
 
 proc to_json*(rs: bamStats): string = 
   let js = %* {
@@ -109,6 +112,8 @@ proc to_json*(rs: bamStats): string =
     "failed_qc" : rs.failedQC, 
     "refAln_hist" : %*{},
     "mapq_hist" : %*{},
+    "frag_hist" : %*{},
+    "length_hist" : %*{},
 
   }
 
@@ -117,6 +122,12 @@ proc to_json*(rs: bamStats): string =
   
   for quality, count in rs.mapQualityHist.pairs():
     js["mapq_hist"].add($quality, newJInt(count))
+
+  for length, count in rs.fragLengthHist.pairs():
+    js["frag_hist"].add($length, newJInt(count))
+
+  for length, count in rs.readLengthHist.pairs():
+    js["length_hist"].add($length, newJInt(count))
 
   return js.pretty()
     

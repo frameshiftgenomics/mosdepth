@@ -551,9 +551,19 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, region: strin
 
   bam_stats.init()
 
-  for rec in bam.querys("*"):
-    # Count the unaligned reads
-    bam_stats.countRead(rec)
+  # Count the unaligned reads indexed by HTS_IDX_NOCOOR = -2 or reference name "*" depending on file format
+  if bam.hts.is_cram != 0:
+    for rec in bam.queryi(-2, -1, -1):
+      if rec.tid < 0:
+        # We want reads that map to nowhere in the reference. HTS_IDX_NOCOOR gets these, but also includes reads 
+        # that map partially to the reference as well. Unless we check explicitly for the target id being outside the
+        # reference, partially mapped reads will be counted twice. Unfortunately, because the partially mapped 
+        # reads are in the index block they map to and the NOCOOR index block, there is no way to avoid enumerating
+        # these partially mapped reads altogether. 
+        bam_stats.countRead(rec)
+  else:
+    for rec in bam.querys("*"):
+      bam_stats.countRead(rec)
 
   for target in sub_targets:
     chrom_global_distribution = new_seq[int64](1000)
