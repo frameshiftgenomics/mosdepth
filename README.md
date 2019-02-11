@@ -1,3 +1,9 @@
+Frameshift note: build with the latest nim (as of this writing, v0.19.4).
+To build: 
+1) `nimble install -y`
+2) `nim c -d:release mosdepth.nim`
+
+
 fast BAM/CRAM depth calculation for **WGS**, **exome**, or **targeted sequencing**.
 [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/mosdepth/README.html)
 

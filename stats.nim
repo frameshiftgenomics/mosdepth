@@ -23,7 +23,7 @@ type
     fragLengthHist: CountTableRef[int]
     readLengthHist: CountTableRef[int]
 
-proc countRead*(rs: var bamStats, rec: Record, chrom: string = nil) = 
+proc countRead*(rs: var bamStats, rec: Record, chrom: string = "") = 
   rs.totalReads += 1
   if rec.flag.proper_pair:
     rs.properPairs += 1
@@ -45,7 +45,7 @@ proc countRead*(rs: var bamStats, rec: Record, chrom: string = nil) =
       if rec.flag.mate_unmapped: rs.singletons += 1
       else: rs.bothMatesMapped += 1
   
-  if chrom != nil:
+  if chrom != "":
     rs.refAlnHist.inc(chrom)
     #if not rs.refAlnHist.hasKey(chrom):
     #  rs.refAlnHist[chrom] = 0
