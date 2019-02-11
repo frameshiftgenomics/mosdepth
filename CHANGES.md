@@ -1,3 +1,18 @@
+0.2.5 (dev)
+=====
++ remove dependency on PCRE
+
+0.2.4
+=====
++ Add optional `--include-flag` to allow counting only reads that have some bits in the specified flag set.
+  This will only be used rarely--e.g. to count only supplemental reads, use `-F 0 --include-flag 2048`.
++ Fix case when only a single argument was given to --quantize
++ add --read-groups option to allow specifying that only certain read-groups should be used in the depth calculation. (#60)
++ add --fast-mode that does not look at internal cigar operations like (I)insertions or (D)eletions, but does consider soft and
+  hard-clips at the end of the alignment. Also does not correct for mate overlap. This makes mosdepth as much as **2X faster for 
+  CRAM** and is likely the desired mode for people using the depth for CNV or general coverage values as drops in coverage
+  due to CIGAR operations are often not of interest for coverage-based analyses.
+
 0.2.3
 =====
 + fix bug in region.dist with chromosomes in bam header, but without any reads. thanks (@vladsaveliev for reporting)

@@ -49,11 +49,14 @@ Common Options:
 Other options:
 
   -F --flag <FLAG>              exclude reads with any of the bits in FLAG set [default: 1796]
+  -i --include-flag <FLAG>      only include reads with any of the bits in FLAG set. default is unset. [default: 0]
+  -x --fast-mode                dont look at internal cigar operations or correct mate overlaps (recommended for most use-cases).
   -q --quantize <segments>      write quantized output see docs for description.
   -Q --mapq <mapq>              mapping quality threshold [default: 0]
   -T --thresholds <thresholds>  for each interval in --by, write number of bases covered by at
                                 least threshold bases. Specify multiple integer values separated
                                 by ','.
+  -R --read-groups <string>     only calculate depth for these comma-separated read groups IDs.
   -h --help                     show help
 
 ```
@@ -86,11 +89,15 @@ The distribution of depths will go to `sample-output.mosdepth.dist.txt`
 For 500-base windows
 
 ```
-mosdepth -n --by 500 sample.wgs $sample.wgs.bam
+mosdepth -n --fast-mode --by 500 sample.wgs $sample.wgs.cram
 ```
 
 `-n` means don't output per-base data, this will make `mosdepth`
 a bit faster as there is some cost to outputting that much text.
+
+--fast-mode avoids the extra calculations of mate pair overlap and cigar operations,
+and also allows htslib to extract less data from CRAM, providing a substantial speed
+improvement.
 
 ### Callable regions example
 
@@ -128,6 +135,12 @@ This also forces the output to have 5 decimals of precision rather than the defa
 
 The simplest way is to [![install with bioconda](https://img.shields.io/badge/install%20with-bioconda-brightgreen.svg?style=flat-square)](http://bioconda.github.io/recipes/mosdepth/README.html)
 
+It can also be installed with `brew` as `brew install brewsci/bio/mosdepth` or used via docker with quay:
+```
+docker pull quay.io/biocontainers/mosdepth:0.2.4--he527e40_0
+docker run -v /hostpath/:/opt/mount quay.io/biocontainers/mosdepth:0.2.4--he527e40_0 mosdepth -n --fast-mode -t 4 --by 1000 /opt/mount/sample /opt/mount/$bam
+```
+
 Unless you want to install [nim](https://nim-lang.org), simply download the
 [binary from the releases](https://github.com/brentp/mosdepth/releases).
 
@@ -156,6 +169,9 @@ Then pass that path to mosdepth just like we did with htslib
 LD_LIBRARY_PATH=~/src/pcre-8.41/.libs/:/~/src/htslib/ mosdepth -h
 ```
 
+If you still see an error about `could not import: pcre_free_study` then 
+for some, the solution has been to do: `ln -s /usr/local/lib/libpcre.so /usr/local/lib/libpcre.so.3`
+
 If you do want to install from source, see the [travis.yml](https://github.com/brentp/mosdepth/blob/master/.travis.yml)
 and the [install.sh](https://github.com/brentp/mosdepth/blob/master/scripts/install.sh).
 
@@ -166,8 +182,8 @@ If you use archlinux, you can [install as a package](https://aur.archlinux.org/p
 This is **useful for QC**.
 
 The `$prefix.mosdepth.global.dist.txt` file contains, a cumulative distribution indicating the
-proportion of total bases (or the proportion of the `--by` for `$prefix.mosdepth.region.dist.txt) that were covered
-for at least a given coverage value. It does this for each chromosom, and for then
+proportion of total bases (or the proportion of the `--by` for `$prefix.mosdepth.region.dist.txt`) that were covered
+for at least a given coverage value. It does this for each chromosome, and for the
 whole genome.
 
 Each row will indicate:

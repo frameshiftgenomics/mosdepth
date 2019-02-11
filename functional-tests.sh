@@ -11,7 +11,7 @@ test -e ssshtest || wget -q https://raw.githubusercontent.com/ryanlayer/ssshtest
 set -o nounset
 
 set -e
-nim c --boundChecks:off mosdepth.nim
+nim c --boundChecks:on -x:on mosdepth.nim
 set +e
 exe=./mosdepth
 bam=/data/human/NA12878.subset.bam
@@ -26,6 +26,14 @@ assert_exit_code 0
 assert_equal "$(zgrep ^MT t.per-base.bed.gz)" "MT	0	80	1
 MT	80	16569	0"
 assert_equal "$(zgrep -w ^1 t.per-base.bed.gz)" "1	0	249250621	0"
+
+run overlapFastMode $exe t --fast-mode tests/ovl.bam
+assert_equal "$(zgrep ^MT t.per-base.bed.gz)" "MT	0	6	1
+MT	6	42	2
+MT	42	80	1
+MT	80	16569	0"
+assert_exit_code 0
+
 
 run missing_chrom $exe -c nonexistent --by 20000 t tests/ovl.bam
 assert_in_stderr "[mosdepth] chromosome nonexistent not found"
@@ -53,6 +61,9 @@ assert_exit_code 0
 assert_equal "$(zgrep ^MT t.quantized.bed.gz)" "MT	0	80	1:1000
 MT	80	16569	0:1"
 assert_equal "$(zgrep -w ^1 t.quantized.bed.gz)" "1	0	249250621	0:1"
+
+run single-quant $exe -q 60 t tests/nanopore.bam
+assert_exit_code 0
 
 
 rm -f t.thresholds.bed.gz*
@@ -84,10 +95,21 @@ assert_exit_code 1
 assert_in_stderr "skipping bad bed line:MT	2"
 assert_in_stderr "invalid integer: asdf"
 
+
+$exe -n t tests/ovl.bam
+run test_read_group $exe -n tt tests/ovl.bam -R GT04008021_119
+assert_equal $(cat tt.mosdepth.global.dist.txt | wc -l) 4 
+assert_equal $(diff tt.mosdepth.global.dist.txt t.mosdepth.global.dist.txt | wc -l) 0
+assert_exit_code 0
+
+run test_missing_read_group $exe -n tt tests/ovl.bam -R MISSING
+assert_equal "$(cat tt.mosdepth.global.dist.txt)" "MT	0	1.00
+total	0	1.00"
+
 run big_chrom $exe t tests/big.bam
 assert_exit_code 0
 
-
+rm -f tt.mosdepth.region.dist.txt
 rm -f t.mosdepth.region.dist.txt
 run empty_tids $exe t -n --thresholds 1,5 --by tests/empty-tids.bed tests/empty-tids.bam
 assert_exit_code 0
