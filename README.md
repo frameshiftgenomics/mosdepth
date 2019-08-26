@@ -22,6 +22,7 @@ fast BAM/CRAM depth calculation for **WGS**, **exome**, or **targeted sequencing
 + a distribution of proportion of bases covered at or above a given threshhold for each chromosome and genome-wide.
 + quantized output that merges adjacent bases as long as they fall in the same coverage bins e.g. (10-20)
 + threshold output to indicate how many bases in each region are covered at the given thresholds.
++ A summary of mean depths per chromosome and within specified regions per chromosome.
 
 when appropriate, the output files are bgzipped and indexed for ease of use.
 
@@ -34,7 +35,8 @@ mosdepth 0.2.3
 
 Arguments:
 
-  <prefix>       outputs: `{prefix}.mosdepth.global.dist.txt` (NOTE!!! this is changed in version 0.2.2)
+  <prefix>       outputs: `{prefix}.mosdepth.global.dist.txt`
+                          `{prefix}.mosdepth.summary.txt`
                           `{prefix}.mosdepth.region.dist.txt` (if --by is specified)
                           `{prefix}.per-base.bed.gz` (unless -n/--no-per-base is specified)
                           `{prefix}.regions.bed.gz` (if --by is specified)
