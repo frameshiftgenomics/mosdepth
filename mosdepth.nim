@@ -7,6 +7,7 @@ import strutils as su
 import os
 import docopt
 import times
+import stats
 import math
 import ./depthstat
 
@@ -597,7 +598,8 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
 
   if region != "":
     fregion = wopen_bgzi(prefix & ".regions.bed.gz", 1, 2, 3, true, levels=levels)
-    if region.isdigit():
+    let invalid = AllChars - Digits
+    if region.find(invalid) == -1:
       window = uint32(S.parse_int(region))
     else:
       bed_regions = bed_to_table(region)
@@ -609,7 +611,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
 
   # Count the unaligned reads indexed by HTS_IDX_NOCOOR = -2 or reference name "*" depending on file format
   if bam.hts.is_cram != 0:
-    for rec in bam.queryi(-2, -1, -1):
+    for rec in bam.query(-2, -1, -1):
       if rec.tid < 0:
         # We want reads that map to nowhere in the reference. HTS_IDX_NOCOOR gets these, but also includes reads 
         # that map partially to the reference as well. Unless we check explicitly for the target id being outside the
@@ -618,7 +620,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
         # these partially mapped reads altogether. 
         bam_stats.countRead(rec)
   else:
-    for rec in bam.querys("*"):
+    for rec in bam.query("*"):
       bam_stats.countRead(rec)
 
   for target in sub_targets:
