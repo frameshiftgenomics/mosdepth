@@ -1,4 +1,5 @@
 import hts
+import hts/private/hts_concat
 import tables
 import strutils as S
 import algorithm as alg
@@ -598,8 +599,7 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
 
   if region != "":
     fregion = wopen_bgzi(prefix & ".regions.bed.gz", 1, 2, 3, true, levels=levels)
-    let invalid = AllChars - Digits
-    if region.find(invalid) == -1:
+    if region.isdigit():
       window = uint32(S.parse_int(region))
     else:
       bed_regions = bed_to_table(region)
@@ -620,8 +620,10 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
         # these partially mapped reads altogether. 
         bam_stats.countRead(rec)
   else:
-    for rec in bam.query("*"):
-      bam_stats.countRead(rec)
+    var nncoor = hts_idx_get_n_no_coor(bam.idx)
+    if nncoor > 0.uint64:
+      for rec in bam.query("*"):
+        bam_stats.countRead(rec)
 
   for target in sub_targets:
     chrom_global_distribution = new_seq[int64](1000)
