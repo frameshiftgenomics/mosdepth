@@ -1,6 +1,7 @@
 import hts
 import hts/private/hts_concat
 import tables
+import ./int2str
 import strutils as S
 import algorithm as alg
 import sequtils as sequtils
@@ -43,10 +44,7 @@ proc `$`*(r: region_t): string =
 
 proc to_coverage(c: var coverage_t) =
   # to_coverage converts from an array of start/end inc/decs to actual coverage.
-  var cum = int32(0)
-  for i, d in c.mpairs:
-    cum += d
-    d = cum
+  c.cumsum()
 
 iterator gen_depths(arr: coverage_t, offset: int=0, istop: int=0): depth_t =
   # given `arr` with values in each index indicating the number of reads
@@ -292,11 +290,10 @@ proc coverage(bam: hts.Bam, arr: var coverage_t, bam_stats: var bamStats, region
             # 4623241 4623264
             # chr1 4623171 69M1D23M9S (pos: 4623171, value: 1)(pos: 4623241, value: 1)(pos: 4623240, value: -1)(pos: 4623264, value: -1)
             # chr1 4623223 4S97M (pos: 4623223, value: 1)(pos: 4623320, value: -1)
-            assert (rec.start <= mate.stop), rec.tostring() & "\n" & mate.tostring()
             # each element will have a .value of 1 for start and -1 for end.
 
-            var ses = sequtils.to_seq(gen_start_ends(rec.cigar, rec.start))
-            for p in gen_start_ends(mate.cigar, mate.start):
+            var ses = sequtils.to_seq(gen_start_ends(rec.cigar, rec.start.int))
+            for p in gen_start_ends(mate.cigar, mate.start.int):
                 ses.add(p)
             alg.sort(ses, pair_sort)
             var pair_depth = 0
@@ -316,7 +313,7 @@ proc coverage(bam: hts.Bam, arr: var coverage_t, bam_stats: var bamStats, region
       arr[rec.start] += 1
       arr[rec.stop] -= 1
     else:
-      inc_coverage(rec.cigar, rec.start, arr)
+      inc_coverage(rec.cigar, rec.start.int, arr)
 
   if not found:
     return -2
@@ -533,6 +530,10 @@ proc get_min_levels(targets: seq[Target]): int =
     result += 1
     s = s shl 3
 
+proc isdigit(s:string): bool =
+  for c in s:
+    if not c.isdigit: return false
+  return true
 
 proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16, region: string, thresholds: seq[int],
           fast_mode:bool, args: Table[string, docopt.Value], use_median:bool=false) =
@@ -658,7 +659,11 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
         discard fregion.write_interval(line, target.name, int(r.start), int(r.stop))
         line = line[0..<0]
         if tid != -2:
-          chrom_region_distribution.inc(arr, r.start, r.stop)
+          if region.isdigit: #stores the aggregated coverage for each region when working with even windows across the genome
+            chrom_region_distribution[min(me.toInt,int64(len(chrom_region_distribution))-1)] += 1
+          else: # stores the per-base coverage in each region specified in the bed file
+            chrom_region_distribution.inc(arr, r.start, r.stop)
+
         write_thresholds(fthresholds, tid, arr, thresholds, r)
     if tid != -2:
       chrom_global_distribution.inc(arr, uint32(0), uint32(len(arr) - 1))
@@ -685,8 +690,17 @@ proc main(bam: hts.Bam, chrom: region_t, mapq: int, eflag: uint16, iflag: uint16
       if tid == -2:
         discard fbase.write_interval(starget & "0\t" & intToStr(int(target.length)) & "\t0", target.name, 0, int(target.length))
       else:
+        var line = newStringOfCap(32)
+        line.add(starget)
         for p in gen_depths(arr):
-          discard fbase.write_interval(starget & intToStr(p.start) & "\t" & intToStr(p.stop) & "\t" & intToStr(p.value), target.name, p.start, p.stop)
+          # re-use line each time.
+          line.setLen(starget.len)
+          fastIntToStr(p.start.int32, line, line.len)
+          line.add('\t')
+          fastIntToStr(p.stop.int32, line, line.len)
+          line.add('\t')
+          fastIntToStr(p.value.int32, line, line.len)
+          discard fbase.write_interval(line, target.name, p.start, p.stop)
     if quantize.len != 0:
       if tid == -2 and quantize[0] == 0:
         var lookup = make_lookup(quantize)
@@ -756,7 +770,7 @@ when(isMainModule):
   when not defined(release) and not defined(lto):
     stderr.write_line "[mosdepth] WARNING: built in debug mode; will be slow"
 
-  let version = "mosdepth 0.2.6"
+  let version = "mosdepth 0.2.9"
   let env_fasta = getEnv("REF_PATH")
   let doc = format("""
   $version
@@ -778,7 +792,7 @@ Common Options:
 
   -t --threads <threads>     number of BAM decompression threads [default: 0]
   -c --chrom <chrom>         chromosome to restrict depth calculation.
-  -b --by <bed|window>       optional BED file or (integer) window-sizes.
+  -b --by <bed|window>       optional BED file or (integer) window-sizes. 
   -n --no-per-base           dont output per-base depth. skipping this output will speed execution
                              substantially. prefer quantized or thresholded values if possible.
   -f --fasta <fasta>         fasta file for use with CRAM files [default: $env_fasta].
@@ -789,7 +803,7 @@ Other options:
   -i --include-flag <FLAG>      only include reads with any of the bits in FLAG set. default is unset. [default: 0]
   -x --fast-mode                dont look at internal cigar operations or correct mate overlaps (recommended for most use-cases).
   -q --quantize <segments>      write quantized output see docs for description.
-  -Q --mapq <mapq>              mapping quality threshold [default: 0]
+  -Q --mapq <mapq>              mapping quality threshold. reads with a quality less than this value are ignored [default: 0]
   -T --thresholds <thresholds>  for each interval in --by, write number of bases covered by at
                                 least threshold bases. Specify multiple integer values separated
                                 by ','.

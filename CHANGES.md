@@ -1,8 +1,20 @@
-0.2.7 (dev)
+0.2.9
+=====
++ modifies region.dist.txt to contain the aggregate coverage of each window when -b (integer) is specified
+  (otherwise region.dist.txt and global.disk.txt are identical with -b (integer) )
++ improve speed by ~30% when using per-base output with better int2str method
+  
+0.2.8
+=====
++ fix off-by-one error in CSI index (but not data) of output bed files (#98)
+
+0.2.7
 =====
 + small optimizations
 + exit with 1 on bad help #80
 + fix check on remote bam (brentp/hts-nim#48)
++ fix erroneous assert #99
++ update static binary to htslib 1.10 (this fixes other bugs reported and closed in mosdepth)
 
 0.2.6
 =====
