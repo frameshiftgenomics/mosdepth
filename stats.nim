@@ -55,10 +55,10 @@ proc countRead*(rs: var bamStats, rec: Record, chrom: string = "") =
   rs.readLengthHist.inc(rec.b.core.l_qseq)
 
   # This field is dubious as it depends on the order of traversing the bam file
-  rs.lastReadPos = rec.start
+  rs.lastReadPos = rec.start.int
 
   if hts.pair(rec.flag) and not rec.flag.unmapped and not rec.flag.mate_unmapped and rec.chrom == rec.mate_chrom and rec.mate_pos > rec.start:
-    rs.fragLengthHist.inc(rec.isize)
+    rs.fragLengthHist.inc(rec.isize.int)
    
 
 proc init*(rs: var bamStats) = 
